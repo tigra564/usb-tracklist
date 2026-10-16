@@ -62,15 +62,17 @@ func Run(opts Options) error {
 	// 4. Dry run: print and stop.
 	if opts.DryRun {
 		printPlan(opts.Stdout, pl)
+		fmt.Fprintf(opts.Stdout, "playlist would be written: %s\n",
+			opts.PlaylistPath)
 		return nil
 	}
 
-	// 5. Apply in three phases.
+	// 5. Apply in phases.
 	if err := applyPlan(opts, pl); err != nil {
 		return err
 	}
 
-	// 6. Rewrite the playlist from the directory.
+	// 6. Rewrite the final playlist from the directory.
 	if err := writePlaylist(opts, reader); err != nil {
 		return err
 	}
@@ -112,9 +114,20 @@ func loadPlaylist(path string) (playlist.PlayList, error) {
 	return list, nil
 }
 
-// applyPlan applies the plan in three phases: tags, renames,
-// finalize.
+// applyPlan applies the plan in phases: intermediate playlist,
+// tags, renames, finalize.
 func applyPlan(opts Options, pl plan.Plan) error {
+	// Phase 0: write the intermediate playlist. This is done
+	// before any changes to the files, so that a crash at any
+	// later point can be recovered from.
+	if err := writePlaylistFile(opts.PlaylistPath, pl.Intermediate); err != nil {
+		return err
+	}
+	if opts.Verbose {
+		fmt.Fprintf(opts.Stdout, "playlist written: %s\n",
+			opts.PlaylistPath)
+	}
+
 	// Phase 1: tags.
 	for _, c := range pl.Tags {
 		if opts.Verbose {
@@ -201,25 +214,50 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0o644)
 }
 
-// writePlaylist rebuilds the directory snapshot and writes it to
-// the playlist file.
+// writePlaylist reads the directory and writes the final playlist
+// to disk through a temporary file.
 func writePlaylist(opts Options, reader tags.Reader) error {
 	list, err := buildPlaylist(opts.Directory, reader)
 	if err != nil {
 		return err
 	}
-	f, err := os.Create(opts.PlaylistPath)
-	if err != nil {
-		return fmt.Errorf("create playlist: %w", err)
-	}
-	defer f.Close()
-	if err := playlist.Write(f, list); err != nil {
-		return fmt.Errorf("write playlist: %w", err)
+	if err := writePlaylistFile(opts.PlaylistPath, list); err != nil {
+		return err
 	}
 	if opts.Verbose {
 		fmt.Fprintf(opts.Stdout, "playlist written: %s\n",
 			opts.PlaylistPath)
 	}
+	return nil
+}
+
+// writePlaylistFile writes a playlist to path through a temporary
+// file, so that a crash during the write does not leave a
+// half-written CSV behind.
+func writePlaylistFile(path string, list playlist.PlayList) error {
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+
+	if err := playlist.Write(f, list); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename %s to %s: %w", tmp, path, err)
+	}
+
 	return nil
 }
 

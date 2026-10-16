@@ -29,6 +29,13 @@ type RenameChange struct {
 
 // Plan is the set of changes to apply, in three phases.
 type Plan struct {
+	// Intermediate is the playlist as it should look after all
+	// changes are applied, but with the current file names (the
+	// names before any renames). It is written to disk before any
+	// changes are made, so that a crash at any later point can be
+	// recovered from.
+	Intermediate playlist.PlayList
+
 	Tags     []TagsChange
 	Renames  []RenameChange
 	Finalize []RenameChange
@@ -81,7 +88,9 @@ func BuildPlan(d, p playlist.PlayList) (Plan, Warnings, error) {
 		return Plan{}, nil, err
 	}
 
-	plan := Plan{}
+	intermediate := playlistFromTargets(targets)
+
+	plan := Plan{Intermediate: intermediate}
 
 	// Phase 1: tags.
 	for _, t := range targets {
@@ -121,6 +130,24 @@ func BuildPlan(d, p playlist.PlayList) (Plan, Warnings, error) {
 	}
 
 	return plan, nil, nil
+}
+
+// playlistFromTargets builds the intermediate playlist: current
+// file names with the target tag values and hashes.
+func playlistFromTargets(targets []target) playlist.PlayList {
+	out := make(playlist.PlayList, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, playlist.Song{
+			FileName: t.OldName,
+			Number:   t.Number,
+			Title:    t.Title,
+			Artist:   t.Artist,
+			Album:    t.Album,
+			Type:     t.Type,
+			Hash:     t.Hash,
+		})
+	}
+	return out
 }
 
 // pair is one matched pair: a song from the directory and the song
