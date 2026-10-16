@@ -59,7 +59,15 @@ func Run(opts Options) error {
 		return fmt.Errorf("plan has warnings, nothing was changed")
 	}
 
-	// 4. Dry run: print and stop.
+	// 4. Empty plan: nothing to do.
+	if isEmpty(pl) {
+		if opts.Verbose {
+			fmt.Fprintln(opts.Stdout, "already in sync")
+		}
+		return nil
+	}
+
+	// 5. Dry run: print and stop.
 	if opts.DryRun {
 		printPlan(opts.Stdout, pl)
 		fmt.Fprintf(opts.Stdout, "playlist would be written: %s\n",
@@ -67,17 +75,24 @@ func Run(opts Options) error {
 		return nil
 	}
 
-	// 5. Apply in phases.
+	// 6. Apply in phases.
 	if err := applyPlan(opts, pl); err != nil {
 		return err
 	}
 
-	// 6. Rewrite the final playlist from the directory.
+	// 7. Rewrite the final playlist from the directory.
 	if err := writePlaylist(opts, reader); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// isEmpty reports whether the plan has nothing to do.
+func isEmpty(pl plan.Plan) bool {
+	return len(pl.Tags) == 0 &&
+		len(pl.Renames) == 0 &&
+		len(pl.Finalize) == 0
 }
 
 // buildPlaylist reads the directory and returns a playlist snapshot.
@@ -117,15 +132,20 @@ func loadPlaylist(path string) (playlist.PlayList, error) {
 // applyPlan applies the plan in phases: intermediate playlist,
 // tags, renames, finalize.
 func applyPlan(opts Options, pl plan.Plan) error {
-	// Phase 0: write the intermediate playlist. This is done
-	// before any changes to the files, so that a crash at any
-	// later point can be recovered from.
-	if err := writePlaylistFile(opts.PlaylistPath, pl.Intermediate); err != nil {
-		return err
-	}
-	if opts.Verbose {
-		fmt.Fprintf(opts.Stdout, "playlist written: %s\n",
-			opts.PlaylistPath)
+	// Phase 0: write the intermediate playlist, but only if we
+	// are about to change tags. If no tags are changing, the
+	// renames can be recovered from the file names alone, and the
+	// write would be unnecessary.
+	if len(pl.Tags) > 0 {
+		if err := writePlaylistFile(
+			opts.PlaylistPath, pl.Intermediate,
+		); err != nil {
+			return err
+		}
+		if opts.Verbose {
+			fmt.Fprintf(opts.Stdout, "playlist written: %s\n",
+				opts.PlaylistPath)
+		}
 	}
 
 	// Phase 1: tags.
