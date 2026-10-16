@@ -83,6 +83,23 @@ To change the order of tracks, reorder the rows. To change tags,
 edit the `Title`, `Artist`, or `Album` columns. Do not edit
 `File Name`, `Track Number`, `Type`, or `Hash`.
 
+### File names
+
+By default, the base part of a file name is taken from the current
+file name: `05 Song.mp3` becomes `01 Song.mp3` when the track moves
+to the first position. The tool only changes the numeric prefix.
+
+With `--name-from-tags`, the base part is built from the track's
+tags instead, in the format `Artist - Title`. A track with
+`Artist = "Juanes"` and `Title = "La camisa negra"` becomes
+`01 Juanes - La camisa negra.mp3`. Characters that are not allowed
+in file names are replaced by underscores, and the name is
+truncated to fit the VFAT limit.
+
+`--name-from-tags` requires every track to have both `Artist` and
+`Title` set. If either is empty, the tool stops with a warning and
+nothing is changed.
+
 ### What is allowed
 
 Between runs you may:
@@ -134,6 +151,7 @@ one playlist per directory.
 -p, --play-list <file>   playlist file name (default: playlist.csv)
 -v, --verbose            verbose output
 -n, --dry-run            show plan without changes (implies -v)
+    --name-from-tags     build file names from Artist and Title tags
 -h, --help               show help
 ```
 

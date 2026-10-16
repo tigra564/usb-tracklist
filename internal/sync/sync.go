@@ -22,6 +22,7 @@ type Options struct {
 	PlaylistPath string
 	DryRun       bool
 	Verbose      bool
+	NameFromTags bool
 	Stdout       io.Writer
 	Stderr       io.Writer
 }
@@ -37,7 +38,7 @@ func Run(opts Options) error {
 	}
 
 	// 2. Playlist snapshot.
-	p, err := loadPlaylist(opts.PlaylistPath)
+	p, existed, err := loadPlaylist(opts.PlaylistPath)
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,9 @@ func Run(opts Options) error {
 	}
 
 	// 3. Plan.
-	pl, warnings, err := plan.BuildPlan(d, p)
+	pl, warnings, err := plan.BuildPlan(d, p, plan.Options{
+		NameFromTags: opts.NameFromTags,
+	})
 	if err != nil {
 		return err
 	}
@@ -59,8 +62,8 @@ func Run(opts Options) error {
 		return fmt.Errorf("plan has warnings, nothing was changed")
 	}
 
-	// 4. Empty plan: nothing to do.
-	if isEmpty(pl) {
+	// 4. Empty plan and the playlist already exists: nothing to do.
+	if isEmpty(pl) && existed {
 		if opts.Verbose {
 			fmt.Fprintln(opts.Stdout, "already in sync")
 		}
@@ -111,22 +114,24 @@ func buildPlaylist(dir string, reader tags.Reader) (playlist.PlayList, error) {
 	return list, nil
 }
 
-// loadPlaylist reads the playlist from disk. A missing or empty
-// file yields an empty playlist, no error.
-func loadPlaylist(path string) (playlist.PlayList, error) {
+// loadPlaylist reads the playlist from disk. The second return
+// value reports whether the file existed and was non-empty. A
+// missing or empty file yields an empty playlist and existed=false.
+func loadPlaylist(path string) (playlist.PlayList, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, fmt.Errorf("open playlist: %w", err)
+		return nil, false, fmt.Errorf("open playlist: %w", err)
 	}
 	defer f.Close()
+
 	list, err := playlist.Read(f)
 	if err != nil {
-		return nil, fmt.Errorf("read playlist: %w", err)
+		return nil, false, fmt.Errorf("read playlist: %w", err)
 	}
-	return list, nil
+	return list, len(list) > 0, nil
 }
 
 // applyPlan applies the plan in phases: intermediate playlist,

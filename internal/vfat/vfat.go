@@ -7,6 +7,7 @@ package vfat
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -18,6 +19,49 @@ const (
 	// file names. The set matches the specification from Microsoft.
 	forbidden = `\/:*?"<>|`
 )
+
+// forbiddenReplacers replaces every VFAT-forbidden character with
+// an underscore. It is built from forbidden so that the two lists
+// cannot diverge.
+var forbiddenReplacers = newReplacer(forbidden, "_")
+
+// newReplacer builds a strings.Replacer that replaces every
+// character of chars with replacement.
+func newReplacer(chars, replacement string) *strings.Replacer {
+	pairs := make([]string, 0, 2*len(chars))
+	for _, r := range chars {
+		pairs = append(pairs, string(r), replacement)
+	}
+	return strings.NewReplacer(pairs...)
+}
+
+// SanitizeName makes a string safe to use as a VFAT file name.
+// Forbidden characters are replaced by underscores, leading and
+// trailing dots and spaces are removed, and the result is truncated
+// to MaxLen bytes on a rune boundary.
+//
+// The caller is still responsible for checking the final name with
+// Check, because the extension and the track number prefix are
+// added later.
+func SanitizeName(s string) string {
+	s = forbiddenReplacers.Replace(s)
+	s = strings.Trim(s, " .")
+	return truncateUTF8(s, MaxLen)
+}
+
+// truncateUTF8 truncates s to at most maxBytes bytes, cutting on a
+// rune boundary so that the result is valid UTF-8.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for i := maxBytes; i > 0; i-- {
+		if utf8.RuneStart(s[i]) {
+			return s[:i]
+		}
+	}
+	return ""
+}
 
 // reservedNames are device names that VFAT reserves regardless of
 // extension. "CON.txt" is just as invalid as "CON".

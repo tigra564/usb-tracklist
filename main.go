@@ -18,6 +18,7 @@ func main() {
 		playlistName string
 		verbose      bool
 		dryRun       bool
+		nameFromTags bool
 	)
 
 	pflag.StringVarP(&playlistName, "play-list", "p", defaultPlaylist,
@@ -26,6 +27,8 @@ func main() {
 		"verbose output")
 	pflag.BoolVarP(&dryRun, "dry-run", "n", false,
 		"show plan without changes (implies -v)")
+	pflag.BoolVar(&nameFromTags, "name-from-tags", false,
+		"build file names from Title and Artist tags")
 
 	pflag.Usage = func() {
 		printUsage(os.Stdout)
@@ -68,6 +71,7 @@ func main() {
 		PlaylistPath: playlistPath,
 		DryRun:       dryRun,
 		Verbose:      verbose,
+		NameFromTags: nameFromTags,
 		Stdout:       os.Stdout,
 		Stderr:       os.Stderr,
 	}
@@ -104,6 +108,7 @@ Flags:
   -p, --play-list <file>   playlist file name (default: %s)
   -v, --verbose            verbose output
   -n, --dry-run            show plan without changes (implies -v)
+      --name-from-tags     build file names from Title and Artist tags
   -h, --help               show this help
 
 The playlist is always the source of truth. If it does not exist or is

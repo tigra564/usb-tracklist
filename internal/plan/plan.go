@@ -4,12 +4,24 @@ package plan
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/tigra564/usb-tracklist/internal/naming"
 	"github.com/tigra564/usb-tracklist/internal/playlist"
 	"github.com/tigra564/usb-tracklist/internal/vfat"
 )
+
+// Options controls how the plan is built.
+type Options struct {
+	// NameFromTags, when true, builds the base part of each file
+	// name from the track's Title and Artist tags instead of from
+	// the current file name. The format is "Artist - Title".
+	//
+	// Every track must have both Title and Artist set; otherwise
+	// the plan cannot be built and a warning is returned.
+	NameFromTags bool
+}
 
 // TagsChange replaces the tags of a file.
 type TagsChange struct {
@@ -70,7 +82,7 @@ type target struct {
 //
 // If p is empty, the caller should pass a copy of d so that the
 // first run builds the playlist from the directory.
-func BuildPlan(d, p playlist.PlayList) (Plan, Warnings, error) {
+func BuildPlan(d, p playlist.PlayList, opts Options) (Plan, Warnings, error) {
 	matched, leftD, leftP := resolve(d, p)
 
 	if len(leftP) > 0 {
@@ -83,7 +95,7 @@ func BuildPlan(d, p playlist.PlayList) (Plan, Warnings, error) {
 		return Plan{}, w, nil
 	}
 
-	targets, typeWarnings, err := buildTargets(matched, leftD)
+	targets, warnings, err := buildTargets(matched, leftD, opts)
 	if err != nil {
 		return Plan{}, nil, err
 	}
@@ -123,7 +135,6 @@ func BuildPlan(d, p playlist.PlayList) (Plan, Warnings, error) {
 	plan.Finalize = finalize
 
 	// Validation.
-	warnings := typeWarnings
 	warnings = append(warnings, validatePlan(plan)...)
 	if len(warnings) > 0 {
 		return Plan{}, warnings, nil
@@ -222,8 +233,9 @@ func matchByHash(d playlist.PlayList, used []bool, hash string) int {
 
 // buildTargets assigns track numbers to the matched pairs and the
 // leftover directory files, in playlist order. It also checks for
-// type mismatches between the directory and the playlist.
-func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, error) {
+// type mismatches between the directory and the playlist, and
+// builds file names from tags when requested.
+func buildTargets(matched []pair, leftD playlist.PlayList, opts Options) ([]target, Warnings, error) {
 	total := len(matched) + len(leftD)
 	if total == 0 {
 		return nil, nil, nil
@@ -241,21 +253,21 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 	// playlist; the base name comes from the directory.
 	for _, m := range matched {
 		index++
+
 		if m.d.Type != m.p.Type {
 			warnings = append(warnings, fmt.Sprintf(
 				"type mismatch for %s: directory has %q, "+
 					"playlist has %q",
 				m.d.FileName, m.d.Type, m.p.Type))
 		}
-		number := naming.FormatNumber(index, width)
-		base := naming.BasePart(m.d.FileName)
-		finalName := naming.MakeNewName(number, base)
 
-		// Normalize tag values before hashing and writing. This
-		// makes " Album " and "Album" equivalent.
+		number := naming.FormatNumber(index, width)
 		title := naming.NormalizeSpaces(m.p.Title)
 		artist := naming.NormalizeSpaces(m.p.Artist)
 		album := naming.NormalizeSpaces(m.p.Album)
+
+		base := baseName(m.d.FileName, title, artist, opts, &warnings)
+		finalName := naming.MakeNewName(number, base)
 		hash := naming.HashTags(title, artist, album)
 
 		tagsDirty := hash != m.p.Hash || number != m.p.Number
@@ -278,12 +290,13 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 	for _, ds := range leftD {
 		index++
 		number := naming.FormatNumber(index, width)
-		base := naming.BasePart(ds.FileName)
-		finalName := naming.MakeNewName(number, base)
 
 		title := naming.NormalizeSpaces(ds.Title)
 		artist := naming.NormalizeSpaces(ds.Artist)
 		album := naming.NormalizeSpaces(ds.Album)
+
+		base := baseName(ds.FileName, title, artist, opts, &warnings)
+		finalName := naming.MakeNewName(number, base)
 
 		targets = append(targets, target{
 			OldName:   ds.FileName,
@@ -299,6 +312,36 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 	}
 
 	return targets, warnings, nil
+}
+
+// baseName returns the base part of the target file name, including
+// the extension. If opts.NameFromTags is true, it builds the name
+// from Title and Artist; otherwise it strips the prefix from the
+// current file name. A missing Title or Artist is reported as a
+// warning and falls back to the current file name.
+func baseName(
+	fileName, title, artist string,
+	opts Options,
+	warnings *Warnings,
+) string {
+	// The extension is taken from the permanent name, without the
+	// temp suffix that may be present on disk.
+	clean := strings.TrimSuffix(fileName, naming.TempSuffix)
+	ext := filepath.Ext(clean)
+
+	if !opts.NameFromTags {
+		return naming.BasePart(fileName)
+	}
+
+	if title == "" || artist == "" {
+		*warnings = append(*warnings, fmt.Sprintf(
+			"cannot build name from tags for %s: "+
+				"Title or Artist is empty",
+			fileName))
+		return naming.BasePart(fileName)
+	}
+
+	return vfat.SanitizeName(artist+" - "+title) + ext
 }
 
 // orderRenames takes a list of desired renames and returns them in

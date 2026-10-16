@@ -22,7 +22,7 @@ func song(name, number, title, artist, album, typ string) playlist.Song {
 }
 
 func TestBuildPlan_Empty(t *testing.T) {
-	p, w, err := BuildPlan(nil, nil)
+	p, w, err := BuildPlan(nil, nil, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestBuildPlan_AlreadySynced(t *testing.T) {
 		song("02 Other.mp3", "02", "Other", "Artist", "Album", "mp3"),
 	}
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBuildPlan_TagsDirty(t *testing.T) {
 	// because the user edited Title by hand in the CSV.
 	p[0].Hash = naming.HashTags("Song", "Artist", "Album")
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestBuildPlan_RenameByNumber(t *testing.T) {
 		song("05 Song.mp3", "05", "Song", "Artist", "Album", "mp3"),
 	}
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestBuildPlan_RenameByHash(t *testing.T) {
 		song("05 Song.mp3", "05", "Song", "Artist", "Album", "mp3"),
 	}
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestBuildPlan_LeftP(t *testing.T) {
 		song("01 Song.mp3", "01", "Song", "Artist", "Album", "mp3"),
 	}
 
-	_, w, err := BuildPlan(d, p)
+	_, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestBuildPlan_LeftD(t *testing.T) {
 		song("01 Song.mp3", "01", "Song", "Artist", "Album", "mp3"),
 	}
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestBuildPlan_Swap(t *testing.T) {
 		song("01 Song.mp3", "02", "Song", "Artist", "Album", "mp3"),
 	}
 
-	plan, w, err := BuildPlan(d, p)
+	plan, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestBuildPlan_TypeMismatch(t *testing.T) {
 		song("01 Song.mp3", "01", "Song", "Artist", "Album", "ogg"),
 	}
 
-	_, w, err := BuildPlan(d, p)
+	_, w, err := BuildPlan(d, p, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,5 +270,104 @@ func TestOrderRenames_Swap(t *testing.T) {
 	}
 	if len(finalize) != 1 {
 		t.Errorf("got %d finalize entries, want 1", len(finalize))
+	}
+}
+
+func TestBuildPlan_NameFromTags(t *testing.T) {
+	d := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song", "Artist", "Album", "mp3"),
+	}
+	p := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song", "Artist", "Album", "mp3"),
+	}
+
+	plan, w, err := BuildPlan(d, p, Options{NameFromTags: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w) != 0 {
+		t.Fatalf("unexpected warnings: %v", w)
+	}
+	if len(plan.Renames) != 1 {
+		t.Fatalf("got %d renames, want 1", len(plan.Renames))
+	}
+	r := plan.Renames[0]
+	want := "01 Artist - Song.mp3"
+	if r.NewName != want {
+		t.Errorf("NewName = %q, want %q", r.NewName, want)
+	}
+}
+
+func TestBuildPlan_NameFromTags_EmptyArtist(t *testing.T) {
+	d := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song", "", "Album", "mp3"),
+	}
+	p := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song", "", "Album", "mp3"),
+	}
+
+	_, w, err := BuildPlan(d, p, Options{NameFromTags: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, msg := range w {
+		if strings.Contains(msg, "Title or Artist is empty") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected empty artist warning, got %v", w)
+	}
+}
+
+func TestBuildPlan_NameFromTags_Sanitized(t *testing.T) {
+	d := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song/Title", "Artist:Name", "Album", "mp3"),
+	}
+	p := playlist.PlayList{
+		song("05 Song.mp3", "05", "Song/Title", "Artist:Name", "Album", "mp3"),
+	}
+
+	plan, w, err := BuildPlan(d, p, Options{NameFromTags: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w) != 0 {
+		t.Fatalf("unexpected warnings: %v", w)
+	}
+	r := plan.Renames[0]
+	want := "01 Artist_Name - Song_Title.mp3"
+	if r.NewName != want {
+		t.Errorf("NewName = %q, want %q", r.NewName, want)
+	}
+}
+
+func TestBuildPlan_NameFromTags_TempSuffix(t *testing.T) {
+	// A stuck file with a temp suffix: the extension must come
+	// from the permanent name, not from the temp suffix.
+	d := playlist.PlayList{
+		song("04.mp3"+naming.TempSuffix, "04",
+			"Song", "Artist", "Album", "mp3"),
+	}
+	p := playlist.PlayList{
+		song("04.mp3"+naming.TempSuffix, "04",
+			"Song", "Artist", "Album", "mp3"),
+	}
+
+	plan, w, err := BuildPlan(d, p, Options{NameFromTags: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w) != 0 {
+		t.Fatalf("unexpected warnings: %v", w)
+	}
+	if len(plan.Renames) != 1 {
+		t.Fatalf("got %d renames, want 1", len(plan.Renames))
+	}
+	r := plan.Renames[0]
+	want := "01 Artist - Song.mp3"
+	if r.NewName != want {
+		t.Errorf("NewName = %q, want %q", r.NewName, want)
 	}
 }
