@@ -12,8 +12,6 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/tigra564/usb-tracklist/internal/fsops"
 	"github.com/tigra564/usb-tracklist/internal/naming"
@@ -162,7 +160,7 @@ func (list *PlayList) FromFileList(
 
 		song := Song{
 			FileName: f.PermanentName,
-			Number:   normalizeTrack(t.Track, width),
+			Number:   naming.NormalizeTrack(t.Track, width),
 			Title:    t.Title,
 			Artist:   t.Artist,
 			Album:    t.Album,
@@ -174,20 +172,4 @@ func (list *PlayList) FromFileList(
 
 	*list = out
 	return nil
-}
-
-// normalizeTrack brings a TRCK value to the canonical form used by
-// this tool: a zero-padded number of the given width, or an empty
-// string if the value is not a number. "5/12", "5", and "05" all
-// become "05" with width 2.
-func normalizeTrack(track string, width int) string {
-	// Strip the "/total" part if present.
-	if i := strings.IndexByte(track, '/'); i >= 0 {
-		track = track[:i]
-	}
-	n, err := strconv.Atoi(track)
-	if err != nil {
-		return ""
-	}
-	return naming.FormatNumber(n, width)
 }

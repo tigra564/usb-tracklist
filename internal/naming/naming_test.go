@@ -250,3 +250,55 @@ func TestTempSuffix(t *testing.T) {
 			TempSuffix)
 	}
 }
+
+func TestNormalizeSpaces(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"Song", "Song"},
+		{"  Song  ", "Song"},
+		{"Song  Title", "Song Title"},
+		{"Song\tTitle", "Song Title"},
+		{"Song\nTitle", "Song Title"},
+		{"Song\r\nTitle", "Song Title"},
+		{"  Song   Title  ", "Song Title"},
+		{"Song\t\tTitle\n\nOther", "Song Title Other"},
+	}
+	for _, c := range cases {
+		if got := NormalizeSpaces(c.in); got != c.want {
+			t.Errorf("NormalizeSpaces(%q) = %q, want %q",
+				c.in, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeTrack(t *testing.T) {
+	cases := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"", 2, ""},
+		{"1", 2, "01"},
+		{"01", 2, "01"},
+		{"5", 2, "05"},
+		{"05", 2, "05"},
+		{"5/12", 2, "05"},
+		{"05/12", 2, "05"},
+		{"10", 2, "10"},
+		{"100", 3, "100"},
+		{"1", 3, "001"},
+		{"abc", 2, ""},
+		{"1abc", 2, ""},
+		{"-1", 2, ""},
+	}
+	for _, c := range cases {
+		if got := NormalizeTrack(c.in, c.width); got != c.want {
+			t.Errorf("NormalizeTrack(%q, %d) = %q, want %q",
+				c.in, c.width, got, c.want)
+		}
+	}
+}

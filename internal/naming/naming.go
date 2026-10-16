@@ -187,3 +187,27 @@ func HashTags(title, artist, album string) string {
 	sum := md5.Sum([]byte(joined))
 	return hex.EncodeToString(sum[:])
 }
+
+// NormalizeSpaces collapses runs of whitespace into a single space
+// and trims leading and trailing whitespace. It is applied to tag
+// values before they are written, so that " Album " and "Album"
+// are treated as the same value.
+func NormalizeSpaces(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// NormalizeTrack brings a raw TRCK value to the canonical form
+// used by this tool: a zero-padded number of the given width, or
+// an empty string if the value is not a number. The "/total" part,
+// if present, is dropped: "5/12", "5", and "05" all become "05"
+// with width 2.
+func NormalizeTrack(track string, width int) string {
+	if i := strings.IndexByte(track, '/'); i >= 0 {
+		track = track[:i]
+	}
+	n, err := strconv.Atoi(track)
+	if err != nil || n < 1 {
+		return ""
+	}
+	return FormatNumber(n, width)
+}

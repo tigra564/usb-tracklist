@@ -250,7 +250,13 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 		number := naming.FormatNumber(index, width)
 		base := naming.BasePart(m.d.FileName)
 		finalName := naming.MakeNewName(number, base)
-		hash := naming.HashTags(m.p.Title, m.p.Artist, m.p.Album)
+
+		// Normalize tag values before hashing and writing. This
+		// makes " Album " and "Album" equivalent.
+		title := naming.NormalizeSpaces(m.p.Title)
+		artist := naming.NormalizeSpaces(m.p.Artist)
+		album := naming.NormalizeSpaces(m.p.Album)
+		hash := naming.HashTags(title, artist, album)
 
 		tagsDirty := hash != m.p.Hash || number != m.p.Number
 
@@ -258,9 +264,9 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 			OldName:   m.d.FileName,
 			FinalName: finalName,
 			Type:      m.d.Type,
-			Title:     m.p.Title,
-			Artist:    m.p.Artist,
-			Album:     m.p.Album,
+			Title:     title,
+			Artist:    artist,
+			Album:     album,
 			Number:    number,
 			Hash:      hash,
 			TagsDirty: tagsDirty,
@@ -275,15 +281,19 @@ func buildTargets(matched []pair, leftD playlist.PlayList) ([]target, Warnings, 
 		base := naming.BasePart(ds.FileName)
 		finalName := naming.MakeNewName(number, base)
 
+		title := naming.NormalizeSpaces(ds.Title)
+		artist := naming.NormalizeSpaces(ds.Artist)
+		album := naming.NormalizeSpaces(ds.Album)
+
 		targets = append(targets, target{
 			OldName:   ds.FileName,
 			FinalName: finalName,
 			Type:      ds.Type,
-			Title:     ds.Title,
-			Artist:    ds.Artist,
-			Album:     ds.Album,
+			Title:     title,
+			Artist:    artist,
+			Album:     album,
 			Number:    number,
-			Hash:      naming.HashTags(ds.Title, ds.Artist, ds.Album),
+			Hash:      naming.HashTags(title, artist, album),
 			TagsDirty: true, // new file, at least TRCK must be written
 		})
 	}
